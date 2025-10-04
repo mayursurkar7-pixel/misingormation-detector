@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Misinformation Detector</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Define the new color variables */
+        :root {
+            --color-bg-primary: #f1f1f1; /* Main body background */
+            --color-bg-card: #ffffff; /* Card/Container background */
+            --color-accent-subtle: #f5efeb; /* Light border accent */
+            --color-bg-muted: #e7e0d8; /* Muted background (e.g., claim card) */
+            --color-text-deep: #3f2f67; /* Retained dark text color for contrast */
+            --color-button-primary: #1e40af; /* Bold color for functional elements (reverted to a dark blue for contrast/functionality) */
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--color-bg-primary); /* #f1f1f1 */
+        }
+        /* Custom background gradient for presentation impact - Reverting to a dark color for visibility */
+        .bg-impact {
+            background: linear-gradient(135deg, var(--color-button-primary) 0%, #1d4ed8 100%); 
+        }
+        .result-card {
+            border-left: 5px solid;
+            transition: all 0.5s ease-in-out; 
+        }
+        /* Verdict color definitions - using standard high-contrast colors for functionality */
+        
+        .safe { border-color: #059669; } /* Emerald Green */
+        .caution { border-color: #fbbf24; } /* Amber Yellow */
+        .danger { border-color: #dc2626; } /* Red */
+        .neutral { border-color: #9ca3af; } /* Gray */
+
+        /* Keyframe for a single, prominent pulse effect on the verdict */
+        @keyframes pulse-once {
+            0% { transform: scale(0.95); opacity: 0.7; }
+            50% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .animate-pulse-once {
+            animation: pulse-once 0.7s ease-out 1;
+        }
+
+        /* Styling core elements with the new light palette and dark text */
+        .text-header-main { color: var(--color-text-deep); } 
+        .text-accent-link { color: var(--color-button-primary); } 
+        .border-input-focus { border-color: var(--color-button-primary); } 
+        .ring-input-focus { --tw-ring-color: var(--color-button-primary); }
+    </style>
+</head>
+<body class="min-h-screen flex items-start justify-center p-4 sm:p-8">
+
+    <div id="app-container" class="w-full max-w-4xl">
+
+        <header class="text-center py-6 mb-8 bg-impact text-white rounded-xl shadow-2xl">
+            <h1 class="text-3xl sm:text-4xl font-extrabold mb-1">
+                 Misinformation Detector
+            </h1>
+            <p class="text-lg font-light opacity-80">
+                AI-Powered Fact-Checking 
+            </p>
+        </header>
+
+        <div class="bg-white p-6 sm:p-8 rounded-xl shadow-lg border border-gray-100">
+            <h2 class="text-2xl font-bold text-header-main mb-4">Analyze a Claim</h2>
+            
+            <div class="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-2 sm:space-y-0">
+                <label for="example-claims" class="text-sm font-medium text-gray-700">Try an Example Claim:</label>
+                <select id="example-claims" class="p-2 border border-gray-300 rounded-lg text-gray-700 focus:ring-input-focus focus:border-input-focus transition duration-150">
+                    <option value="">-- Select a predefined claim --</option>
+                    <option value="Eating an apple a day cures all known diseases.">Health: Apple-a-day cure-all (English)</option>
+                    <option value="El candidato prometió eliminar todos los impuestos para siempre.">Political: Candidate Tax Promise (Spanish)</option>
+                    <option value="Alle elektroauto-batterien halten weniger als 3 Jahre und sind nicht recycelbar.">Technology: EV Battery Lifespan (German)</option>
+                </select>
+            </div>
+
+            <textarea id="claim-input" rows="5" class="w-full p-4 border-2 border-[var(--color-accent-subtle)] rounded-lg focus:ring-input-focus focus:border-input-focus transition duration-150 ease-in-out text-[var(--color-text-deep)] placeholder-gray-400 resize-none" placeholder="Paste a headline, tweet, or claim here..."></textarea>
+            
+            <div class="flex justify-between items-center text-sm text-gray-500 mt-1">
+                <span>Claim Length: <span id="word-count">0</span> words</span>
+                <span>Max: <span id="char-count">0</span> / <span id="char-limit">500</span> characters</span>
+            </div>
+
+            <div class="mt-4 p-4 border border-[var(--color-accent-subtle)] rounded-lg space-y-3">
+                
+                <div class="flex items-center">
+                    <input id="impact-mode-toggle" type="checkbox" class="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500">
+                    <label for="impact-mode-toggle" class="ml-2 text-base font-semibold text-header-main">
+                        High-Impact Mode (Apply extra skepticism / fact-check sensitive topics)
+                    </label>
+                </div>
+                
+                <div class="flex items-center">
+                    <input id="context-toggle" type="checkbox" class="h-4 w-4 text-accent-link border-gray-300 rounded focus:ring-accent-link">
+                    <label for="context-toggle" class="ml-2 text-base font-semibold text-header-main">
+                        Add Optional Background Context
+                    </label>
+                </div>
+                <textarea id="context-input" rows="2" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 text-[var(--color-text-deep)] placeholder-gray-400 bg-[var(--color-bg-muted)] resize-none transition duration-150" placeholder="e.g., 'This came from a meme page on social media.' or 'This is about a 2020 election bill.'" disabled></textarea>
+            </div>
+
+
+            <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 mt-4">
+                <button id="analyze-button" class="w-full sm:w-auto px-6 py-3 bg-[var(--color-button-primary)] text-white font-semibold rounded-lg shadow-md hover:bg-[#102d7e] transition duration-200 ease-in-out transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-[var(--color-button-primary)] focus:ring-opacity-50 disabled:bg-gray-400 flex items-center justify-center">
+                    <span id="button-text">Analyze Claim</span>
+                    <svg id="loading-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </button>
+                <button id="reset-button" class="w-full sm:w-auto px-6 py-3 bg-gray-200 text-gray-700 font-semibold rounded-lg shadow-md hover:bg-gray-300 transition duration-200 ease-in-out focus:outline-none focus:ring-4 focus:ring-gray-400 focus:ring-opacity-50 disabled:opacity-50" disabled>
+                    Start New Analysis
+                </button>
+            </div>
+            
+            <div id="progress-tracker" class="mt-4 p-3 bg-blue-50 border border-[var(--color-accent-subtle)] rounded-lg text-sm text-[var(--color-button-primary)] font-medium hidden">
+                <p id="progress-text" class="flex items-center">
+                    <svg class="animate-spin -ml-1 mr-3 h-4 w-4 text-[var(--color-button-primary)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Status: Initializing...</span>
+                </p>
+                <p id="analysis-time-display" class="text-xs text-[var(--color-text-deep)] mt-1 hidden">
+                    Time Elapsed: <span id="time-value">0.00</span>s
+                </p>
+            </div>
+
+        </div>
+
+        <div id="results-container" class="mt-8 hidden">
+            <h2 class="text-2xl font-bold text-header-main mb-4">Analysis Results</h2>
+
+            <div id="claim-card" class="bg-[var(--color-bg-muted)] p-4 rounded-lg mb-6 shadow-inner border-t-2 border-[var(--color-accent-subtle)]">
+                <p class="text-sm font-semibold text-accent-link mb-1 uppercase tracking-wider">Original Claim</p>
+                <p id="original-claim-output" class="text-[var(--color-text-deep)] italic leading-relaxed"></p>
+                <p id="context-output" class="text-sm text-gray-600 mt-2 italic hidden border-t border-gray-300 pt-2">
+                    <span class="font-semibold text-accent-link not-italic">Context Provided:</span> <span id="context-text-output"></span>
+                </p>
+            </div>
+
+            <div id="verdict-card" class="result-card p-6 sm:p-8 rounded-xl shadow-2xl bg-white transition duration-500">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+                    <p class="text-lg font-medium text-gray-500 uppercase tracking-wider flex items-center">
+                        Detection Verdict
+                    </p>
+                    <div class="flex items-center space-x-4 mt-3 sm:mt-0">
+                        
+                        <div id="verdict-display" class="flex items-center space-x-3 text-3xl sm:text-4xl font-extrabold text-white px-6 py-3 rounded-xl shadow-2xl transition duration-500 transform scale-100">
+                            <span id="verdict-icon"></span>
+                            <span id="verdict-text"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-between items-center border-b pb-2 mb-3 mt-8">
+                    <h3 class="text-xl font-semibold text-header-main">AI Reasoning (Zero-Shot Analysis)</h3>
+                    <button id="copy-reasoning-button" class="text-sm text-accent-link hover:text-[var(--color-text-deep)] font-medium flex items-center disabled:opacity-50" title="Copy Reasoning">
+                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4 mr-1">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v2.25A2.25 2.25 0 0 1 13.5 22h-2.25a2.25 2.25 0 0 1-2.25-2.25v-2.25m10.5-5.25v2.25a2.25 2.25 0 0 1-2.25 2.25h-2.25m-10.5-5.25v2.25a2.25 2.25 0 0 0 2.25 2.25h2.25m-2.25-5.25h4.5a2.25 2.25 0 0 1 2.25 2.25v4.5m-15.75-9a2.25 2.25 0 0 1 2.25-2.25h4.5m-4.5 0v4.5a2.25 2.25 0 0 0 2.25 2.25h4.5m4.5-6.75a2.25 2.25 0 0 1 2.25 2.25v4.5m-2.25 0h-4.5a2.25 2.25 0 0 1-2.25-2.25v-4.5m4.5 0v4.5m-4.5-4.5h4.5" />
+                        </svg>
+                        Copy
+                    </button>
+                </div>
+                <p id="reasoning-output" class="text-[var(--color-text-deep)] leading-relaxed whitespace-pre-wrap"></p>
+                
+                <div id="reference-links-container" class="mt-8 hidden">
+                    <ul id="cited-links-list" class="space-y-2 text-sm text-gray-600">
+                        </ul>
+                </div>
+            </div>
+
+        </div>
+
+        <div id="notification-area" class="mt-4 p-4 rounded-lg text-white font-medium hidden"></div>
+
+    </div>
+
+    <script>
+        // Global variables for API key and URL
+        const apiKey = "AIzaSyCmPRwMdl476wUDzQnryF9xq6SmSppV9tc"; // Keep this empty; the canvas environment provides the key automatically
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+        
+        const MAX_CHAR_LIMIT = 500; 
+
+        // DOM elements
+        const inputElement = document.getElementById('claim-input');
+        const analyzeButton = document.getElementById('analyze-button');
+        const resetButton = document.getElementById('reset-button');
+        const buttonText = document.getElementById('button-text');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const resultsContainer = document.getElementById('results-container');
+        const verdictCard = document.getElementById('verdict-card');
+        const verdictIcon = document.getElementById('verdict-icon');
+        const verdictText = document.getElementById('verdict-text');
+        const originalClaimOutput = document.getElementById('original-claim-output');
+        const reasoningOutput = document.getElementById('reasoning-output');
+        const notificationArea = document.getElementById('notification-area');
+        const referenceLinksContainer = document.getElementById('reference-links-container');
+        const citedLinksList = document.getElementById('cited-links-list');
+        const wordCountDisplay = document.getElementById('word-count');
+        const exampleClaimsSelect = document.getElementById('example-claims');
+        const contextToggle = document.getElementById('context-toggle');
+        const contextInput = document.getElementById('context-input');
+        const contextOutput = document.getElementById('context-output');
+        const contextTextOutput = document.getElementById('context-text-output');
+        
+        const charCountDisplay = document.getElementById('char-count');
+        const impactModeToggle = document.getElementById('impact-mode-toggle');
+        const progressTracker = document.getElementById('progress-tracker');
+        const progressText = document.getElementById('progress-text');
+        const analysisTimeDisplay = document.getElementById('analysis-time-display'); 
+        const timeValueSpan = document.getElementById('time-value');
+        const copyReasoningButton = document.getElementById('copy-reasoning-button');
+
+        // State variables
+        let isProcessing = false;
+        let analysisStartTime = 0; 
+
+        /**
+         * Utility function to display non-alert messages.
+         */
+        function showNotification(message, type = 'error') {
+            notificationArea.textContent = message;
+            // Using standard Tailwind colors for notifications for guaranteed visibility
+            notificationArea.classList.remove('hidden', 'bg-red-500', 'bg-green-500', 'bg-yellow-500', 'bg-blue-500');
+
+            if (type === 'error') {
+                notificationArea.classList.add('bg-red-500');
+            } else if (type === 'success') {
+                notificationArea.classList.add('bg-green-500');
+            } else if (type === 'warning') {
+                 notificationArea.classList.add('bg-yellow-500');
+            } else {
+                notificationArea.classList.add('bg-blue-500');
+            }
+
+            setTimeout(() => {
+                notificationArea.classList.add('hidden');
+            }, 6000);
+        }
+
+        /**
+         * Starts the analysis timer.
+         */
+        function startTimer() {
+            analysisStartTime = Date.now();
+            analysisTimeDisplay.classList.remove('hidden');
+        }
+
+        /**
+         * Stops the analysis timer and updates the display.
+         */
+        function stopTimer() {
+            if (analysisStartTime > 0) {
+                const elapsed = (Date.now() - analysisStartTime) / 1000;
+                timeValueSpan.textContent = elapsed.toFixed(2);
+            }
+            analysisStartTime = 0;
+        }
+
+        /**
+         * Updates the status bar text.
+         */
+        function updateProgress(text) {
+            progressTracker.classList.remove('hidden');
+            progressText.querySelector('span').textContent = `Status: ${text}`;
+        }
+
+        /**
+         * Controls the UI state when processing the API call.
+         * @param {boolean} processing
+         */
+        function setProcessingState(processing) {
+            isProcessing = processing;
+            const isOverLimit = inputElement.value.length > MAX_CHAR_LIMIT;
+
+            analyzeButton.disabled = processing || isOverLimit;
+            inputElement.disabled = processing;
+            resetButton.disabled = processing;
+            contextInput.disabled = processing || !contextToggle.checked;
+            contextToggle.disabled = processing;
+            exampleClaimsSelect.disabled = processing;
+            impactModeToggle.disabled = processing;
+            
+            if (processing) {
+                buttonText.textContent = 'Analyzing...';
+                loadingSpinner.classList.remove('hidden');
+                copyReasoningButton.disabled = true; 
+                startTimer(); 
+            } else {
+                buttonText.textContent = 'Analyze Claim';
+                loadingSpinner.classList.add('hidden');
+                progressTracker.classList.add('hidden');
+                copyReasoningButton.disabled = false;
+                stopTimer(); 
+            }
+        }
+
+        /**
+         * Calls the Gemini API with exponential backoff for resilience.
+         */
+        async function callGeminiApi(payload, maxRetries = 3) {
+            let attempt = 0;
+            while (attempt < maxRetries) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.status === 429) {
+                        throw new Error('Rate limit exceeded. Retrying...');
+                    }
+
+                    if (!response.ok) {
+                        throw new Error(`API returned status ${response.status}: ${response.statusText}`);
+                    }
+
+                    return await response.json();
+                } catch (error) {
+                    attempt++;
+                    if (attempt >= maxRetries) {
+                        console.error('Final API call failed after retries:', error);
+                        throw new Error('Could not connect to the analysis engine. Please try again later.');
+                    }
+                    const delay = Math.pow(2, attempt) * 1000 + (Math.random() * 1000); 
+                    console.warn(`Attempt ${attempt} failed. Retrying in ${delay / 1000}s...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        /**
+         * Maps the model's verdict to UI styles for presentation.
+         */
+        function getVerdictStyle(verdict) {
+            const normalizedVerdict = verdict.toUpperCase().trim();
+
+            if (normalizedVerdict.includes('HIGH RISK') || normalizedVerdict.includes('FALSE') || normalizedVerdict.includes('MISLEADING')) {
+                return { label: 'HIGH RISK / FALSE', colorClass: 'bg-red-500', cardClass: 'danger', icon: '❌' };
+            }
+            if (normalizedVerdict.includes('MODERATE RISK') || normalizedVerdict.includes('NEEDS CONTEXT') || normalizedVerdict.includes('PARTIALLY')) {
+                return { label: 'MODERATE RISK', colorClass: 'bg-yellow-500', cardClass: 'caution', icon: '⚠️' };
+            }
+            if (normalizedVerdict.includes('LOW RISK') || normalizedVerdict.includes('TRUE') || normalizedVerdict.includes('VERIFIED')) {
+                return { label: 'LOW RISK / VERIFIED', colorClass: 'bg-green-500', cardClass: 'safe', icon: '✅' };
+            }
+            return { label: 'UNCLEAR / PENDING', colorClass: 'bg-gray-500', cardClass: 'neutral', icon: '❓' };
+        }
+
+        /**
+         * Function to reset the application state.
+         */
+        function handleReset() {
+            inputElement.value = '';
+            contextInput.value = '';
+            contextToggle.checked = false;
+            contextInput.disabled = true;
+            impactModeToggle.checked = false;
+            exampleClaimsSelect.value = '';
+            
+            // Clear results
+            resultsContainer.classList.add('hidden');
+            contextOutput.classList.add('hidden');
+            notificationArea.classList.add('hidden');
+            copyReasoningButton.disabled = true; 
+            timeValueSpan.textContent = '0.00'; 
+            
+            // Reset controls and counts
+            resetButton.disabled = true;
+            inputElement.disabled = false;
+            analyzeButton.disabled = false;
+            updateWordCount();
+            inputElement.focus();
+            showNotification("Ready for a new analysis!", 'info');
+        }
+
+        // Event listeners for features
+
+        // Word/Character Count and Limit Implementation
+        function updateWordCount() {
+            const text = inputElement.value;
+            const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+            wordCountDisplay.textContent = words;
+            
+            const chars = text.length;
+            charCountDisplay.textContent = chars;
+            
+            if (chars > MAX_CHAR_LIMIT) {
+                charCountDisplay.classList.add('text-red-600', 'font-bold');
+                analyzeButton.disabled = true;
+            } else if (chars > MAX_CHAR_LIMIT * 0.9) {
+                charCountDisplay.classList.remove('text-red-600');
+                charCountDisplay.classList.add('text-yellow-600', 'font-bold');
+                analyzeButton.disabled = isProcessing;
+            } else {
+                charCountDisplay.classList.remove('text-red-600', 'text-yellow-600', 'font-bold');
+                analyzeButton.disabled = isProcessing;
+            }
+        }
+        
+        // Context Toggle Implementation
+        contextToggle.addEventListener('change', () => {
+            contextInput.disabled = !contextToggle.checked;
+            if (contextToggle.checked) {
+                contextInput.focus();
+            }
+        });
+
+        // Example Claims Implementation
+        exampleClaimsSelect.addEventListener('change', (e) => {
+            const selectedClaim = e.target.value;
+            if (selectedClaim) {
+                inputElement.value = selectedClaim;
+                updateWordCount();
+                showNotification(`Loaded example claim: "${selectedClaim}"`, 'info');
+            }
+        });
+
+        // Copy Reasoning Button Implementation
+        copyReasoningButton.addEventListener('click', () => {
+            const textToCopy = `Verdict: ${verdictText.textContent}\n\nReasoning:\n${reasoningOutput.textContent}`;
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                showNotification("Reasoning and Verdict copied to clipboard!", 'success');
+            }).catch(err => {
+                showNotification("Failed to copy text: " + err, 'error');
+            });
+        });
+
+        inputElement.addEventListener('input', updateWordCount);
+
+        /**
+         * Main function to handle the analysis process.
+         */
+        async function handleAnalyze() {
+            if (isProcessing) return;
+
+            const originalClaim = inputElement.value.trim();
+            const userContext = contextToggle.checked ? contextInput.value.trim() : '';
+            const highImpact = impactModeToggle.checked;
+            
+            if (!originalClaim || originalClaim.length > MAX_CHAR_LIMIT) {
+                showNotification("Please ensure your claim is valid and within the character limit.", 'warning');
+                return;
+            }
+            
+            // Set initial state
+            setProcessingState(true);
+            resultsContainer.classList.add('hidden');
+            updateProgress('1. Validating input and preparing analysis modes...');
+
+            // Set output card data
+            originalClaimOutput.textContent = originalClaim;
+            if (userContext) {
+                contextTextOutput.textContent = userContext;
+                contextOutput.classList.remove('hidden');
+            } else {
+                contextOutput.classList.add('hidden');
+            }
+            
+            // --- ZERO-SHOT PROMPT ENGINEERING AND PAYLOAD PREP ---
+            
+            const contextInstruction = userContext 
+                ? `The user also provided this background context: "${userContext}". Use this context to frame your analysis and search queries.` 
+                : '';
+            
+            const impactInstruction = highImpact 
+                ? `\n**HIGH-IMPACT MODE ACTIVATED:** Apply extreme skepticism, verify all details rigorously, and prioritize official or scientific sources (e.g., government, peer-reviewed journals).` 
+                : '';
+
+            // System prompt now only requests VERDICT and REASONING
+            const systemPrompt = `You are an expert Zero-Shot Misinformation Detector and fact-checker. Your primary goal is to provide a grounded analysis with explicit web source citations.
+            Your task is to analyze the following claim: "${originalClaim}".
+            ${contextInstruction}${impactInstruction}
+            
+            You MUST perform a real-time web search and base your judgment and reasoning ONLY on the factual information you retrieve from those search results. 
+            
+            **Crucial Instruction for Source Grounding:** In your REASONING, you MUST explicitly cite the facts you used by placing bracketed numbers (e.g., [1], [2]) directly after the sentence or phrase that contains the information derived from the search result.
+
+            Your response MUST strictly follow this two-part structure:
+            1. **VERDICT:** Output a single verdict line. Choose one of the following: 'HIGH RISK / FALSE', 'MODERATE RISK / NEEDS CONTEXT', or 'LOW RISK / VERIFIED'.
+            2. **REASONING:** Provide a detailed explanation (at least 8 sentences or bullet points) that justifies your verdict and includes **[1]**, **[2]**, etc., markers to indicate where the information originated from the search results. Make this section comprehensive, aiming for approximately 10 lines of text.`;
+
+            const userQuery = `Begin analysis.`; 
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+            };
+
+            try {
+                updateProgress('2. Searching the web for real-time sources...');
+                const result = await callGeminiApi(payload);
+                updateProgress('3. Synthesizing verdict and generating detailed reasoning...');
+                
+                const candidate = result.candidates?.[0];
+
+                if (!candidate || !candidate.content?.parts?.[0]?.text) {
+                    throw new Error("Empty or malformed response from AI.");
+                }
+
+                const fullText = candidate.content.parts[0].text.trim();
+                
+                // 3. Parse and Display Results
+                let verdictLine = 'UNCLEAR / PENDING';
+                let reasoningText = 'Could not parse detailed reasoning.';
+
+                // Robust parsing for the two-part structure
+                const verdictMatch = fullText.match(/VERDICT:\s*([^\n]+)/i);
+                const reasoningMatch = fullText.match(/REASONING:\s*([\s\S]*)/i);
+
+                if (verdictMatch) verdictLine = verdictMatch[1].trim();
+                if (reasoningMatch) reasoningText = reasoningMatch[1].trim();
+                
+                const { label, colorClass, cardClass, icon } = getVerdictStyle(verdictLine);
+
+                // Update UI
+                verdictText.textContent = label;
+                verdictIcon.textContent = icon;
+
+                verdictCard.className = `result-card p-6 sm:p-8 rounded-xl shadow-2xl bg-white transition duration-500 ${cardClass}`;
+                reasoningOutput.textContent = reasoningText;
+                resultsContainer.classList.remove('hidden');
+
+                // 4. Extract and display grounding sources
+                citedLinksList.innerHTML = ''; 
+                referenceLinksContainer.classList.add('hidden');
+
+                let sources = [];
+                const groundingMetadata = candidate.groundingMetadata;
+
+                if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                    sources = groundingMetadata.groundingAttributions
+                        .map(attribution => ({
+                            uri: attribution.web?.uri,
+                            title: attribution.web?.title,
+                        }))
+                        .filter(source => source.uri && source.title);
+                }
+
+                if (sources.length > 0) {
+                    const headerItem = document.createElement('li');
+                    headerItem.className = 'text-sm font-semibold text-gray-800 border-b pb-2 mb-3';
+                    headerItem.textContent = 'Cited Reference Links';
+                    citedLinksList.appendChild(headerItem);
+
+                    sources.forEach((source, index) => {
+                        const listItem = document.createElement('li');
+                        listItem.className = 'flex items-start';
+                        // Use accent link color for links
+                        listItem.innerHTML = `
+                            <span class="mr-2 text-accent-link font-bold">[${index + 1}]</span>
+                            <a href="${source.uri}" target="_blank" rel="noopener noreferrer" class="text-accent-link hover:text-[var(--color-button-primary)] hover:underline transition duration-150 break-words">
+                                ${source.title}
+                                <span class="text-xs text-gray-500 ml-2">(${new URL(source.uri).hostname})</span>
+                            </a>
+                        `;
+                        citedLinksList.appendChild(listItem);
+                    });
+                    referenceLinksContainer.classList.remove('hidden');
+                }
+
+                showNotification("Analysis complete!", 'success');
+
+            } catch (error) {
+                console.error("Error during analysis:", error);
+                showNotification(error.message || "An unexpected error occurred during API call.", 'error');
+            } finally {
+                setProcessingState(false);
+                resetButton.disabled = false;
+            }
+        }
+
+        // Initial setup and event listeners
+        updateWordCount(); 
+        inputElement.addEventListener('input', updateWordCount);
+        analyzeButton.addEventListener('click', handleAnalyze);
+        resetButton.addEventListener('click', handleReset);
+        
+    </script>
+</body>
+</html>
